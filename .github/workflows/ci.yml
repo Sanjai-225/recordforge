@@ -1,0 +1,55 @@
+name: RecordForge validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:db
+      - run: npm run test:load
+      - run: npm run build
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: application-validation
+          path: |
+            docs/test-results
+            docs/screenshots
+  native-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Isolated 120-connection PostgreSQL check
+        shell: bash
+        run: |
+          export TEST_POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+          trap 'docker compose -f compose.test.yaml down' EXIT
+          docker compose -f compose.test.yaml up -d --wait
+          export TEST_DATABASE_URL="postgresql://recordforge_test:${TEST_POSTGRES_PASSWORD}@127.0.0.1:54324/recordforge_test"
+          ALLOW_DESTRUCTIVE_TESTS=true npm run test:concurrency
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-concurrency-validation
+          path: docs/test-results/native-concurrency.json
