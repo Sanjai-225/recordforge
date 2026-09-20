@@ -1,16 +1,30 @@
-import "server-only";
+﻿import "server-only";
 import { createHmac, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { adminClient } from "./supabase/admin";
 import { AppError, publicError } from "./errors";
 export async function body(request: Request) {
+  const reqOrigin = request.headers.get("origin");
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
   const origin = process.env.APP_ORIGIN;
-  if (!origin) throw new AppError("SETUP_REQUIRED", 503);
-  if (
-    request.headers.get("origin") !== new URL(origin).origin ||
-    request.headers.get("sec-fetch-site") === "cross-site"
-  )
+
+  let originMatches = false;
+  if (origin) {
+    try {
+      originMatches = reqOrigin === new URL(origin).origin;
+    } catch {
+      originMatches = false;
+    }
+  }
+  if (!originMatches && host) {
+    originMatches = reqOrigin === "https://" + host || reqOrigin === "http://" + host;
+  }
+  if (!originMatches && process.env.VERCEL_URL) {
+    originMatches = reqOrigin === "https://" + process.env.VERCEL_URL;
+  }
+
+  if (!originMatches || request.headers.get("sec-fetch-site") === "cross-site")
     throw new AppError("INVALID_ORIGIN", 403);
   if (!request.headers.get("content-type")?.startsWith("application/json"))
     throw new AppError("INVALID_INPUT", 415);
